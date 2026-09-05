@@ -57,7 +57,15 @@ class PHIGuard:
 class AuditTrail:
     """Cryptographic Tamper-Evident HMAC-SHA256 Audit Trail."""
     def __init__(self, secret_key: Optional[str] = None):
-        self.secret_key = (secret_key or os.getenv("AUDIT_SECRET_KEY", "neonatal-bilirubin-kramer-master-audit-key-2026")).encode("utf-8")
+        resolved_key = secret_key or os.getenv("AUDIT_SECRET_KEY")
+        if not resolved_key:
+            raise RuntimeError(
+                "AUDIT_SECRET_KEY environment variable must be set. "
+                "Generate a strong key with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        if len(resolved_key) < 16:
+            raise ValueError("AUDIT_SECRET_KEY must be at least 16 characters for HMAC-SHA256 security")
+        self.secret_key = resolved_key.encode("utf-8")
         self.logs: List[Dict[str, Any]] = []
 
     def log(self, actor: str, actor_tier: str, event_type: str, details: Dict[str, Any]) -> Dict[str, Any]:
@@ -93,21 +101,35 @@ class AuditTrail:
         return self.logs
 
 
-GLOBAL_AUDIT = AuditTrail()
+_GLOBAL_AUDIT: Optional[AuditTrail] = None
+
+
+def _get_audit_instance() -> AuditTrail:
+    """Lazily initialize the global audit trail, requiring AUDIT_SECRET_KEY."""
+    global _GLOBAL_AUDIT
+    if _GLOBAL_AUDIT is None:
+        _GLOBAL_AUDIT = AuditTrail()
+    return _GLOBAL_AUDIT
 
 
 class AuditLogger:
     @staticmethod
     def log(actor: str, actor_tier: str, event_type: str, details: Dict[str, Any]) -> Dict[str, Any]:
-        return GLOBAL_AUDIT.log(actor, actor_tier, event_type, details)
+        return _get_audit_instance().log(actor, actor_tier, event_type, details)
 
     @staticmethod
     def get_trail() -> List[Dict[str, Any]]:
-        return GLOBAL_AUDIT.get_trail()
+        return _get_audit_instance().get_trail()
 
     @staticmethod
     def verify_integrity() -> bool:
-        return GLOBAL_AUDIT.verify_integrity()
+        return _get_audit_instance().verify_integrity()
+
+    @staticmethod
+    def reset():
+        """Reset the global audit instance (useful for testing)."""
+        global _GLOBAL_AUDIT
+        _GLOBAL_AUDIT = None
 
 
 class ActionExecutor:

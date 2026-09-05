@@ -3,3 +3,16 @@ __pycache__/
 .venv/
 results.csv
 output.csv
+
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

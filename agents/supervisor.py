@@ -66,7 +66,7 @@ class SystemSupervisor:
             total_alerts=len(all_alerts),
             critical_alerts_count=crit_count,
             alerts=all_alerts,
-            consensus_summary=f"Multi-agent consensus completed with status [{overall_urgency.value}]. Total alerts: {len(all_alerts)}.",
+            consensus_summary=f"Demonstration rule evaluation completed [{overall_urgency.value}]; {len(all_alerts)} illustrative alerts. Not a clinical assessment.",
             audit_hash=audit_entry["current_hash"],
         )
 
@@ -75,5 +75,5 @@ class SystemSupervisor:
 
     def query_supervisory_chat(self, query: str) -> str:
         PHIGuard.assert_no_phi(query)
-        prompt = f"Supervisor inquiry for Neonatal Bilirubin Kramer under CAP / CLSI / ISO Standards: {query}"
+        prompt = f"Demonstration-only supervisor inquiry for Neonatal Bilirubin Kramer: {query}"
         return self.llm.invoke(prompt)

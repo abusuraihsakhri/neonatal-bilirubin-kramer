@@ -1,202 +1,65 @@
 # Neonatal Bilirubin Kramer
 
-> **Domain:** Clinical Decision Support & Biomedical Computing
-> **Standards:** CAP / CLSI / ISO
+An educational, local-first tool for documenting the **cephalocaudal extent of visible neonatal jaundice** using qualitative Kramer zones. The primary application is a standalone browser page; a matching Python CLI supports individual observations and de-identified CSV batches.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)
-![Audit Trail](https://img.shields.io/badge/Audit-HMAC--SHA256_Tamper--Evident-brightgreen.svg)
-![Zero-PHI Guard](https://img.shields.io/badge/Guard-Zero--PHI_Outbound-blue.svg)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
+**Clinical limitation:** Kramer zones are observations, **not bilirubin estimates or treatment thresholds**. Never use the selected zone to infer serum bilirubin concentration, Bhutani percentile, phototherapy eligibility, or neurological risk. Visual inspection can miss jaundice, including in darker skin tones. Follow age-, gestation-, and risk-factor-specific guidance with objective bilirubin measurements. Jaundice visible before 24 hours requires urgent serum bilirubin testing and clinical assessment.
 
----
+## Browser application
 
-## What It Does
+Open [index.html](index.html) in a modern browser (or serve the repository with a static HTTP server). Select the furthest extent of jaundice observed (zone 0–5), optionally enter postnatal age in hours and gestational age in weeks, and select **Document observation**. The app displays a descriptive record and offers **Export JSON**. It works entirely on the client: **no API, external libraries, accounts, analytics, cookies, or persistent browser storage**.
 
-Neonatal Bilirubin Kramer Assessment computes a points-based clinical score from patient risk factors using the Kramer dermal zones methodology. It maps transcutaneous bilirubin measurements to Bhutani nomogram risk tiers with tiered action thresholds.
+The site can be hosted as static files, including on GitHub Pages, without Python, Pyodide, or a backend. Deployment URL and availability must be verified separately.
 
-The system includes:
-- **Core scoring engine** (`kramer.py`): Points-based assessment with configurable thresholds
-- **Enterprise agent suite** (`agents/`): Multi-worker evaluation with HMAC-SHA256 audit trail
-- **FastAPI REST server** (`agents/api.py`): OpenAPI endpoints for task dispatch and audit verification
-- **CLI interface** (`cli.py`): Command-line tools for single/batch assessment
-- **Enrichment engines** (`enrichment.py`): Threshold-based monitoring for longitudinal tracking, EHR/FHIR integration, and alert escalation
+## Python installation and usage
 
----
-
-## Installation
+Requires Python 3.10 or newer.
 
 ```bash
-# Clone the repository
-git clone https://github.com/abusuraihsakhri/neonatal-bilirubin-kramer.git
-cd neonatal-bilirubin-kramer
-
-# Create virtual environment
 python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-# .venv\Scripts\activate   # Windows
-
-# Install dependencies
-pip install fastapi uvicorn pydantic pytest
-
-# Set required environment variable
-export AUDIT_SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
-# Or copy .env.example to .env and edit
+source .venv/bin/activate
+python -m pip install -e ".[test]"
+python -m pytest -q
+node --test tests/browser.test.cjs   # optional: Node.js 22+
 ```
 
----
-
-## Usage
-
-### Core Scoring (kramer.py)
+Record a single observation or process a de-identified CSV:
 
 ```bash
-# Single patient assessment
-python kramer.py single --age 68 --sex M --cancer 1 --comorbidity 1
-
-# Batch CSV processing
+python kramer.py single --zone 1 --age-hours 12 --gestational-weeks 39
+python kramer.py single --json '{"zone":3,"age_hours":36,"gestational_weeks":37}'
 python kramer.py batch --input sample.csv --output results.csv
-
-# JSON input
-python kramer.py single --json '{"age": 68, "sex": "M", "cancer": 1}'
 ```
 
-### Enterprise CLI (cli.py)
+CSV inputs require the exact header `zone` (integer 0–5); optional columns are `age_hours` (0–672) and `gestational_weeks` (22–44). Other columns are preserved. Each row receives descriptive fields (`distribution`, `early_jaundice`, `action`, `limitation`). Avoid names, MRNs, dates of birth, and other identifiable clinical information.
+
+## Separate demonstration API
+
+The pre-existing `agents/` and `cli.py` interfaces remain available for software experiments. They implement a **generic, unvalidated threshold-based simulation**, not neonatal bilirubin decision support. Thresholds such as primary metric >25 or secondary metric >12 are illustrative parameters **without clinical interpretation**. The conversational provider is a mock that does not perform model inference.
 
 ```bash
-# Run single task evaluation
-python cli.py audit --task-id TASK-001 --primary 28.5 --critical
-
-# Batch process CSV records
-python cli.py batch -i sample.csv -o results.csv
-
-# Verify HMAC audit trail integrity
-python cli.py verify-audit
-
-# Launch FastAPI REST server
-python cli.py serve --host 127.0.0.1 --port 8000
-```
-
-### REST API
-
-```bash
-# Start server
+export AUDIT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+python cli.py audit --task-id EX-001 --primary 10
 python cli.py serve
-
-# Health check
-curl http://localhost:8000/health
-
-# Dispatch task
-curl -X POST http://localhost:8000/api/audit \
-  -H "Content-Type: application/json" \
-  -d '{"task_id":"T1","target_identifier":"KEY-01","primary_metric":25.5}'
-
-# View audit trail
-curl http://localhost:8000/api/audit/logs
+curl http://127.0.0.1:8000/health
 ```
 
----
+The API uses FastAPI/Pydantic and maintains an in-memory HMAC-SHA256 audit chain. The key must be supplied through the environment, never in browser code. Audit entries are signed and checked for tampering, but they are not a durable external audit system. The regex-based identifier checks are incomplete, **not HIPAA de-identification or a compliance guarantee**. The demonstration API has no user authentication: do not expose it publicly, connect it to real EHR data, or submit PHI. For experiments involving clinical data, implement appropriate authentication, access controls, retention policy, threat modeling, and governance first.
 
-## Scoring Algorithm
+A Dockerfile and `docker-compose.yml` support running the demonstration API locally. Set a strong `AUDIT_SECRET_KEY` in a private `.env` file before using Compose.
 
-The Kramer score is computed from five binary risk factors:
+## Scope and technology
 
-| Factor | Weight |
-|:-------|:-------|
-| Comorbidity | 1 |
-| Lactate > 2 | 1 |
-| Bilirubin > 4 | 1 |
-| Effusion | 1 |
-| Age > 60 | 1 |
+- **Kramer zones:** 0, no visible jaundice; 1, head/neck; 2, upper trunk; 3, lower abdomen/thighs; 4, arms/lower legs; 5, palms/soles.
+- **Browser:** HTML5, CSS, vanilla JavaScript. All computation remains in-browser, including JSON export.
+- **Python:** standard-library assessment CLI, optional FastAPI/Pydantic simulation interface, pytest regression suite.
+- **Testing:** GitHub Actions checks Python 3.10–3.13, Node.js browser logic tests, package installation, and Python compilation.
+- **Compatibility:** Designed for current desktop and mobile browsers with modern JavaScript support; real-device cross-browser testing is not automated.
 
-**Tier thresholds:**
-- Score <= 2: **low**
-- Score <= 4: **moderate**
-- Score > 4: **high**
+## Clinical sources
 
----
+- [NICE CG98: Jaundice in newborn babies under 28 days](https://www.nice.org.uk/guidance/cg98/chapter/recommendations) — do not rely on visual inspection alone; early-onset jaundice needs urgent measurement.
+- [American Academy of Pediatrics (2022): Management of Hyperbilirubinemia in Infants ≥35 Weeks](https://doi.org/10.1542/peds.2022-058859) — visual estimates have substantial error; measured bilirubin and age-/gestation-specific thresholds are needed.
 
-## Input Data Schema
+## License
 
-### CSV Format (for batch processing)
-
-| Field | Description | Required |
-|:------|:------------|:---------|
-| `patient_id` | Patient identifier | Yes |
-| `age` | Patient age in years | Yes |
-| `sex` | Patient sex (M/F) | No |
-| `prior_vte` | History of venous thromboembolism (1/0) | No |
-| `cancer` | Active cancer diagnosis (1/0) | No |
-| `immobility` | Immobility status (1/0) | No |
-| `surgery` | Recent surgery (1/0) | No |
-
----
-
-## Security
-
-- **Zero-PHI Outbound Guard:** AST and regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers from all outbound data
-- **HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation (requires `AUDIT_SECRET_KEY` environment variable)
-- **Input validation:** All inputs validated before processing
-
----
-
-## Testing
-
-```bash
-# Run full test suite
-pytest -v
-
-# Run with coverage
-pytest -v --cov=. --cov-report=term-missing
-```
-
----
-
-## Docker Deployment
-
-```bash
-# Build and run with docker-compose
-cp .env.example .env
-# Edit .env to set AUDIT_SECRET_KEY
-docker-compose up --build
-
-# Or build manually
-docker build -t neonatal-bilirubin-kramer .
-docker run -p 8000:8000 -e AUDIT_SECRET_KEY=your-secret-key neonatal-bilirubin-kramer
-```
-
----
-
-## Project Structure
-
-```
-neonatal-bilirubin-kramer/
-├── kramer.py              # Core scoring algorithm
-├── cli.py                 # Enterprise CLI interface
-├── enrichment.py          # Threshold-based monitoring engines
-├── simulator.py           # High-throughput stress testing
-├── sample.csv             # Sample input data
-├── benchmark_dataset.json # Golden benchmark test cases
-├── openapi_spec.json      # OpenAPI 3.1 specification
-├── agents/
-│   ├── __init__.py        # Package init
-│   ├── api.py             # FastAPI REST server
-│   ├── base.py            # Security, PHI guard, HMAC audit
-│   ├── models.py          # Pydantic data models
-│   ├── supervisor.py      # Multi-worker orchestrator
-│   ├── workers.py         # Specialized evaluation workers
-│   ├── llm_factory.py     # LLM provider abstraction
-│   ├── learning.py        # Bayesian calibration engine
-│   ├── metrics.py         # Prometheus metrics exporter
-│   └── streamer.py        # WebSocket telemetry broadcaster
-├── tests/
-│   ├── test_kramer.py     # Core scoring tests
-│   ├── test_enrichment.py # Enrichment engine tests
-│   └── test_neonatal_bilirubin_kramer.py  # Full integration tests
-├── web/
-│   └── index.html         # Operations dashboard
-├── Dockerfile
-├── docker-compose.yml
-└── .github/workflows/ci.yml
-```
+[MIT](LICENSE).

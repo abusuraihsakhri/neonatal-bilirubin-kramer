@@ -1,7 +1,7 @@
 """
 Pydantic v2 schemas and data definitions for Neonatal Bilirubin Kramer.
 Domain: Clinical & Biomedical AI
-Standard: CAP / CLSI / ISO Standards
+Scope: unvalidated rules demonstration
 """
 import datetime
 from enum import Enum
@@ -22,11 +22,11 @@ class SystemIntegrityStatus(str, Enum):
 
 
 class SystemTaskPayload(BaseModel):
-    task_id: str = Field(..., description="Unique task / case identifier")
-    target_identifier: str = Field(..., description="Entity, patient key, or genomic/cryptographic target")
-    primary_metric: float = Field(..., description="Primary domain measurement or score")
-    secondary_metric: float = Field(default=0.0, description="Secondary kinetic or confidence score")
-    status_descriptor: str = Field(default="NOMINAL", description="Status code or phenotype descriptor")
+    task_id: str = Field(..., min_length=1, max_length=128, description="De-identified task identifier")
+    target_identifier: str = Field(..., min_length=1, max_length=128, description="De-identified target identifier")
+    primary_metric: float = Field(..., allow_inf_nan=False, description="Demonstration-only metric (not a clinical threshold)")
+    secondary_metric: float = Field(default=0.0, allow_inf_nan=False, description="Demonstration-only secondary metric")
+    status_descriptor: str = Field(default="NOMINAL", max_length=256, description="Demonstration status descriptor")
     is_critical_flag: bool = Field(default=False, description="Emergency escalation or high priority trigger")
     attributes: Dict[str, Any] = Field(default_factory=dict, description="Metadata key-value pairs")
     timestamp: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
@@ -39,7 +39,7 @@ class AgentAlert(BaseModel):
     summary: str
     technical_details: str
     actionable_remediation: str
-    standard_reference: str = "CAP / CLSI / ISO Standards"
+    standard_reference: str = "Unvalidated demonstration; not a clinical standard"
     timestamp: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
 
     def to_dict(self) -> Dict[str, Any]:

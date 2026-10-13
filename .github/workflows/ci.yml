@@ -1,44 +1,55 @@
-name: Neonatal Bilirubin Kramer CI/CD & Security Verification
+name: Test Python and browser application
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [master, main]
   pull_request:
-    branches: [ master, main ]
+    branches: [master, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  test-and-audit:
+  python:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+      - name: Compile Python
+        run: python -m compileall -q agents kramer.py cli.py enrichment.py simulator.py
+      - name: Run regression tests
+        env:
+          AUDIT_SECRET_KEY: ci-only-audit-key-not-for-production-0123456789
+        run: pytest -q
+      - name: Validate distribution metadata
+        run: python -m pip check
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install fastapi uvicorn pydantic pytest
-
-    - name: Run Pytest Suite
-      env:
-        AUDIT_SECRET_KEY: ci-test-audit-key-for-github-actions-only
-      run: |
-        pytest -v
-
-    - name: Security SAST & Zero-PHI Audit
-      env:
-        AUDIT_SECRET_KEY: ci-test-audit-key-for-github-actions-only
-      run: |
-        python -c "
-        from agents.base import PHIGuard, AuditLogger
-        import pytest
-        assert AuditLogger.verify_integrity() is True
-        print('Security & Zero-PHI Audit Passed!')
-        "
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check browser JavaScript syntax
+        run: node --check app.js
+      - name: Run browser logic tests
+        run: node --test tests/browser.test.cjs
+      - name: Confirm standalone entry point
+        run: |
+          test -f index.html
+          test -f styles.css
+          grep -q 'src="./app.js"' index.html

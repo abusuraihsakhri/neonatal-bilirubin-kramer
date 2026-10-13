@@ -1,209 +1,196 @@
 #!/usr/bin/env python3
-"""
-Neonatal Bilirubin Kramer Assessment
-Kramer dermal zones and Bhutani nomogram risk from transcutaneous bilirubin.
-Points-based score with tiered action thresholds. Stdlib only.
+"""Qualitative Kramer-zone documentation for neonatal jaundice.
+
+Kramer zones describe cephalocaudal distribution of visible jaundice.
+They do NOT estimate bilirubin concentration, phototherapy eligibility,
+neurotoxicity risk, or a Bhutani/AAP risk tier.
 """
 import argparse
 import csv
 import json
-import sys
+import math
+from pathlib import Path
 
-FACTORS = [
-    ("Comorbidity", 1),
-    ("Lactate>2", 1),
-    ("Bilirubin>4", 1),
-    ("Effusion", 1),
-    ("Age>60", 1),
-]
-
-THRESHOLDS = [(2, "low"), (4, "moderate"), (100, "high")]
-
-# Mapping from common CSV column names to factor names
-COLUMN_TO_FACTOR = {
-    "age": "Age>60",
-    "sex": None,  # Sex is not a factor in the current model
-    "comorbidity": "Comorbidity",
-    "lactate": "Lactate>2",
-    "bilirubin": "Bilirubin>4",
-    "effusion": "Effusion",
-    "cancer": "Comorbidity",
-    "prior_vte": "Comorbidity",
-    "immobility": "Comorbidity",
-    "surgery": "Comorbidity",
+ZONES = {
+    0: "No visible jaundice reported",
+    1: "Head and neck",
+    2: "Upper trunk (chest and upper abdomen)",
+    3: "Lower abdomen and thighs",
+    4: "Arms and lower legs",
+    5: "Palms and soles",
 }
+OUTPUT_FIELDS = ("zone", "distribution", "early_jaundice", "action", "limitation")
 
 
-def _is_positive(val) -> bool:
-    """Check if a value represents a positive/true condition."""
-    if val is None or val == "":
-        return False
-    if isinstance(val, bool):
-        return val
-    if isinstance(val, (int, float)):
-        return val > 0
-    return str(val).lower().strip() in ("1", "true", "yes", "y", "present", "positive")
+def _number(value, name, minimum, maximum):
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be numeric")
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be numeric") from exc
+    if not math.isfinite(result) or not minimum <= result <= maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
+    return result
 
 
 def calculate_score(present):
-    """Calculate Kramer score from a dict of factor->bool or row dict with 1/0.
+    """Describe visual distribution; do not calculate a clinical risk score.
 
-    Args:
-        present: dict mapping factor names to boolean/numeric values,
-                 or a row dict with common column names (age, sex, etc.)
+    Required: zone (integer 0-5).
+    Optional: age_hours (0-672), gestational_weeks (22-44).
 
-    Returns:
-        dict with 'score' (int), 'tier' (str), and 'detail' (dict of factor->weight)
+    Returns a descriptive record, never a bilirubin estimate or risk tier.
     """
     if not isinstance(present, dict):
         raise TypeError("present must be a dict")
+    raw_zone = present.get("zone")
+    if isinstance(raw_zone, bool) or raw_zone is None or str(raw_zone).strip() not in {
+        "0", "1", "2", "3", "4", "5"
+    }:
+        raise ValueError("zone must be an integer between 0 and 5")
+    zone = int(raw_zone)
+    age_hours = _number(present.get("age_hours"), "age_hours", 0, 672)
+    gestational_weeks = _number(
+        present.get("gestational_weeks"), "gestational_weeks", 22, 44
+    )
 
-    score = 0
-    detail = {}
-    for name, w in FACTORS:
-        # Direct factor name lookup
-        val = present.get(name)
-        if val is None:
-            # Try snake_case key
-            key = name.lower().replace(" ", "_").replace(">", "_gt_").replace("/", "_")
-            val = present.get(key, 0)
+    early = zone > 0 and age_hours is not None and age_hours < 24
+    if early:
+        action = (
+            "Visible jaundice before 24 hours: urgent serum bilirubin "
+            "measurement and clinical assessment are required."
+        )
+    elif zone > 0:
+        action = (
+            "Visible jaundice: obtain objective bilirubin measurement "
+            "and assess using an age- and gestation-appropriate guideline."
+        )
+    else:
+        action = (
+            "No visible jaundice recorded. This does not exclude "
+            "hyperbilirubinemia; follow routine objective bilirubin screening."
+        )
 
-        is_pos = _is_positive(val)
+    if gestational_weeks is not None and gestational_weeks < 35:
+        action += (
+            " Gestation under 35 weeks: use serum bilirubin and a "
+            "prematurity-specific clinical protocol."
+        )
 
-        # Auto-map common CSV columns
-        if not is_pos and name == "Age>60":
-            try:
-                is_pos = float(present.get("age", 0)) > 60
-            except (ValueError, TypeError):
-                pass
-
-        if is_pos:
-            score += w
-            detail[name] = w
-
-    # Determine tier
-    tier = "high"  # default if above all thresholds
-    for thr, label in THRESHOLDS:
-        if score <= thr:
-            tier = label
-            break
-
-    return {"score": score, "tier": tier, "detail": detail}
+    return {
+        "zone": zone,
+        "distribution": ZONES[zone],
+        "age_hours": age_hours,
+        "gestational_weeks": gestational_weeks,
+        "early_jaundice": early,
+        "action": action,
+        "limitation": (
+            "Kramer distribution is observational only. It cannot determine "
+            "bilirubin concentration, risk category, or treatment threshold."
+        ),
+    }
 
 
 def assess_row(row):
-    """Assess a CSV row dict, mapping common column names to Kramer factors.
-
-    Args:
-        row: dict from csv.DictReader
-
-    Returns:
-        dict with 'score', 'tier', and 'detail'
-    """
+    """Evaluate a de-identified CSV row with a required 'zone' column."""
     if not isinstance(row, dict):
         raise TypeError("row must be a dict")
-
-    present = {}
-    # Index by original key and lowercase key
-    for k, v in row.items():
-        if k is not None:
-            present[k] = v
-            present[k.lower()] = v
-
-    # Map known CSV columns to factor names
-    for col, factor in COLUMN_TO_FACTOR.items():
-        if col in present and factor is not None:
-            present[factor] = present[col]
-
-    return calculate_score(present)
+    normalized = {
+        str(key).strip().lower(): value.strip() if isinstance(value, str) else value
+        for key, value in row.items() if key is not None
+    }
+    return calculate_score(normalized)
 
 
 def process_csv(inp, out):
-    """Process a CSV file, appending score/tier/detail columns.
+    """Append descriptive zone fields to a de-identified CSV.
 
-    Args:
-        inp: path to input CSV
-        out: path to output CSV
-
-    Returns:
-        list of result row dicts
+    Reject duplicate headers or pre-existing computed fields to avoid
+    ambiguous data, and avoid partially writing output on validation error.
     """
-    if not inp or not isinstance(inp, str):
-        raise ValueError("Input file path must be a non-empty string")
-    if not out or not isinstance(out, str):
-        raise ValueError("Output file path must be a non-empty string")
+    if not isinstance(inp, (str, Path)) or not str(inp):
+        raise ValueError("Input file path must be provided")
+    if not isinstance(out, (str, Path)) or not str(out):
+        raise ValueError("Output file path must be provided")
+    if Path(inp).resolve() == Path(out).resolve():
+        raise ValueError("Input and output paths must differ")
 
     with open(inp, newline="", encoding="utf-8-sig") as f:
-        r = csv.DictReader(f)
-        rows = list(r)
-        fn = r.fieldnames
+        reader = csv.DictReader(f)
+        headers = reader.fieldnames
+        if not headers or "zone" not in headers:
+            raise ValueError("CSV header must include exact column name 'zone'")
+        normalized_headers = [h.strip().lower() for h in headers]
+        if len(set(normalized_headers)) != len(headers):
+            raise ValueError("CSV contains duplicate column names")
+        if any(h in OUTPUT_FIELDS and h != "zone" for h in normalized_headers):
+            raise ValueError("CSV already contains output columns")
+        results = []
+        for line_no, row in enumerate(reader, start=2):
+            if None in row:
+                raise ValueError(f"Unexpected extra CSV values on line {line_no}")
+            try:
+                assessed = assess_row(row)
+            except (ValueError, TypeError) as exc:
+                raise ValueError(f"Line {line_no}: {exc}") from exc
+            results.append({
+                **row,
+                "zone": assessed["zone"],
+                "distribution": assessed["distribution"],
+                "early_jaundice": assessed["early_jaundice"],
+                "action": assessed["action"],
+                "limitation": assessed["limitation"],
+            })
 
-    if fn is None:
-        raise ValueError("CSV file has no header row")
-
-    results = []
-    for row in rows:
-        res = assess_row(row)
-        merged = {
-            **row,
-            "score": res["score"],
-            "tier": res["tier"],
-            "detail": ";".join(res["detail"].keys()),
-        }
-        results.append(merged)
-
+    output_headers = list(headers)
+    output_headers.extend(h for h in OUTPUT_FIELDS if h not in normalized_headers)
     with open(out, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(fn) + ["score", "tier", "detail"])
-        w.writeheader()
-        w.writerows(results)
-
+        writer = csv.DictWriter(f, fieldnames=output_headers)
+        writer.writeheader()
+        writer.writerows(results)
     return results
 
 
 def build_parser():
-    """Build the argument parser for the CLI."""
-    p = argparse.ArgumentParser(prog="kramer", description="Neonatal Bilirubin Kramer Assessment")
-    sub = p.add_subparsers(dest="cmd", required=True)
-
-    # Single assessment
-    s = sub.add_parser("single", help="Assess a single patient")
-    s.add_argument("--age", type=float, help="Patient age in years")
-    s.add_argument("--sex", help="Patient sex (M/F)")
-    for name, _ in FACTORS:
-        flag = "--" + name.lower().replace(" ", "_").replace(">", "_gt_").replace("/", "_")
-        s.add_argument(flag, default="0", help=f"Factor: {name} (1/0 or true/false)")
-    s.add_argument("--json", help="JSON string of factor values")
-
-    # Batch processing
-    b = sub.add_parser("batch", help="Batch process a CSV file")
-    b.add_argument("--input", required=True, help="Input CSV file path")
-    b.add_argument("--output", required=True, help="Output CSV file path")
-
-    return p
+    parser = argparse.ArgumentParser(
+        prog="kramer", description="Observational neonatal Kramer-zone documentation"
+    )
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    single = sub.add_parser("single", help="Document one visual assessment")
+    single.add_argument("--zone", type=int, choices=range(6))
+    single.add_argument("--age-hours", type=float)
+    single.add_argument("--gestational-weeks", type=float)
+    single.add_argument("--json", help="JSON object with zone and optional context")
+    batch = sub.add_parser("batch", help="Assess a de-identified CSV file")
+    batch.add_argument("--input", required=True)
+    batch.add_argument("--output", required=True)
+    return parser
 
 
 def main(argv=None):
-    """Main entry point for the CLI."""
-    p = build_parser()
-    a = p.parse_args(argv)
-
-    if a.cmd == "single":
-        if a.json:
-            present = json.loads(a.json)
+    args = build_parser().parse_args(argv)
+    if args.cmd == "single":
+        if args.json is not None:
+            data = json.loads(args.json)
         else:
-            present = {k: getattr(a, k) for k in vars(a) if k not in ("cmd", "json")}
-        res = calculate_score(present)
-        print(res)
+            if args.zone is None:
+                raise ValueError("single requires --zone or --json with zone")
+            data = {
+                "zone": args.zone,
+                "age_hours": args.age_hours,
+                "gestational_weeks": args.gestational_weeks,
+            }
+        print(json.dumps(calculate_score(data), indent=2))
         return 0
-
-    if a.cmd == "batch":
-        res = process_csv(a.input, a.output)
-        print(f"Processed {len(res)} -> {a.output}")
+    if args.cmd == "batch":
+        results = process_csv(args.input, args.output)
+        print(f"Processed {len(results)} records -> {args.output}")
         return 0
-
-    p.print_help()
     return 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Record qualitative neonatal jaundice distribution by Kramer zone. No bilirubin concentration or treatment decision is calculated.">
+  <title>Kramer Zones | Neonatal Jaundice Observation</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div class="eyebrow">Neonatal jaundice • educational documentation</div>
+      <h1>Kramer zones</h1>
+      <p>Record the extent of visible jaundice, using the cephalocaudal Kramer description. This tool documents an observation; it does <strong>not</strong> estimate bilirubin concentration or determine treatment.</p>
+    </header>
+
+    <section class="notice" aria-label="Clinical safety note">
+      <strong>Visual assessment is insufficient.</strong>
+      Jaundice may be difficult to detect in darker skin tones. Suspected jaundice requires objective bilirubin measurement per local guidelines. Visible jaundice within the first 24 hours warrants urgent clinical assessment and serum bilirubin measurement.
+    </section>
+
+    <div class="layout">
+      <section class="panel" aria-labelledby="form-heading">
+        <h2 id="form-heading">Record an observation</h2>
+        <form id="assessment-form">
+          <label for="zone">Most distal region with visible jaundice <span class="required">*</span></label>
+          <select id="zone" name="zone" required>
+            <option value="">Select a zone</option>
+            <option value="0">0 — No visible jaundice reported</option>
+            <option value="1">1 — Head and neck</option>
+            <option value="2">2 — Upper trunk (chest and upper abdomen)</option>
+            <option value="3">3 — Lower abdomen and thighs</option>
+            <option value="4">4 — Arms and lower legs</option>
+            <option value="5">5 — Palms and soles</option>
+          </select>
+          <p class="help">Record the furthest extent observed. Zone 0 does not exclude hyperbilirubinemia.</p>
+
+          <div class="fields">
+            <div>
+              <label for="age">Age since birth (hours)</label>
+              <input id="age" name="age" type="number" min="0" max="672" step="any" placeholder="e.g. 18">
+            </div>
+            <div>
+              <label for="gestation">Gestational age (weeks)</label>
+              <input id="gestation" name="gestation" type="number" min="22" max="44" step="any" placeholder="e.g. 38">
+            </div>
+          </div>
+          <p class="help">Context fields are optional. Missing values limit interpretation.</p>
+          <button type="submit" class="primary">Document observation</button>
+        </form>
+      </section>
+
+      <section class="panel" aria-labelledby="result-heading">
+        <div class="section-head">
+          <h2 id="result-heading">Assessment record</h2>
+          <button id="download" class="secondary" type="button" disabled>Export JSON</button>
+        </div>
+        <div id="result" class="result" role="status" aria-live="polite">
+          <p class="empty">Choose a zone and document the observation to see a qualitative summary.</p>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel guide" aria-labelledby="zones-heading">
+      <h2 id="zones-heading">Kramer distribution reference</h2>
+      <ol class="zone-list">
+        <li data-zone="1"><b>1</b> Head and neck</li>
+        <li data-zone="2"><b>2</b> Upper trunk — chest and upper abdomen</li>
+        <li data-zone="3"><b>3</b> Lower abdomen and thighs</li>
+        <li data-zone="4"><b>4</b> Arms and lower legs</li>
+        <li data-zone="5"><b>5</b> Palms and soles</li>
+      </ol>
+      <p class="help">Skin distribution has substantial interobserver variability and is not a substitute for transcutaneous bilirubin (TcB) or total serum bilirubin (TSB). Treatment decisions require hour-specific, gestation-specific clinical guidance and measured bilirubin.</p>
+    </section>
+
+    <footer>
+      <p><strong>Privacy:</strong> Assessment runs entirely in this browser. No data is sent to a server, stored in browser storage, or transmitted for analysis. JSON export is generated locally.</p>
+      <p><strong>Clinical references:</strong>
+        <a href="https://www.nice.org.uk/guidance/cg98/chapter/recommendations" target="_blank" rel="noopener noreferrer">NICE CG98</a>
+        and <a href="https://doi.org/10.1542/peds.2022-058859" target="_blank" rel="noopener noreferrer">AAP 2022 hyperbilirubinemia guideline</a>.
+        For education and documentation, not autonomous medical decision-making.</p>
+    </footer>
+  </main>
+</body>
+</html>

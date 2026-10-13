@@ -5,11 +5,23 @@ import argparse
 import csv
 import json
 import sys
+from pathlib import Path
 from agents.models import SystemTaskPayload
 from agents.supervisor import SystemSupervisor
 from agents.base import AuditLogger
 
 supervisor = SystemSupervisor(model_provider="mock")
+
+
+def parse_boolean(value):
+    """Parse CSV booleans explicitly; bool("false") is True in Python."""
+    if isinstance(value, bool):
+        return value
+    if value is None or str(value).strip().lower() in ("", "0", "false", "no", "n"):
+        return False
+    if str(value).strip().lower() in ("1", "true", "yes", "y"):
+        return True
+    raise ValueError(f"Invalid boolean value: {value!r}")
 
 
 def main(argv=None):
@@ -56,7 +68,7 @@ def main(argv=None):
         dossier = supervisor.process_task(payload)
         print("=" * 80)
         print(f"  NEONATAL BILIRUBIN KRAMER")
-        print(f"  Domain: Clinical & Biomedical AI | Standard: CAP / CLSI / ISO Standards")
+        print("  Demonstration-only rules; not clinical bilirubin guidance")
         print(f"  Dossier ID: {dossier.dossier_id} | Urgency: [{dossier.overall_urgency.value}]")
         print("=" * 80)
         for a in dossier.alerts:
@@ -80,21 +92,31 @@ def main(argv=None):
         return 0
 
     if args.command == "batch":
-        with open(args.input, mode="r", encoding="utf-8-sig") as f:
+        if Path(args.input).resolve() == Path(args.output).resolve():
+            raise ValueError("Input and output paths must differ")
+        if Path(args.input).stat().st_size > 10 * 1024 * 1024:
+            raise ValueError("Batch input must not exceed 10 MiB")
+        with open(args.input, mode="r", encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f)
             fieldnames = list(reader.fieldnames or [])
+            if not fieldnames or len(set(fieldnames)) != len(fieldnames):
+                raise ValueError("CSV requires a header with unique field names")
             rows = list(reader)
-
-        out_fields = fieldnames + ["overall_urgency", "integrity_status", "total_alerts", "audit_hash"]
+        computed = ["overall_urgency", "integrity_status", "total_alerts", "audit_hash"]
+        if set(fieldnames).intersection(computed):
+            raise ValueError("CSV input must not contain reserved output fields")
+        out_fields = fieldnames + computed
         out_rows = []
-        for r in rows:
+        for line_number, r in enumerate(rows, start=2):
+            if None in r:
+                raise ValueError(f"Unexpected additional CSV values on line {line_number}")
             payload = SystemTaskPayload(
                 task_id=r.get("task_id", "TASK-01"),
                 target_identifier=r.get("target_identifier", "TARGET-01"),
                 primary_metric=float(r.get("primary_metric", 15.0)),
                 secondary_metric=float(r.get("secondary_metric", 5.0)),
                 status_descriptor=r.get("status_descriptor", "NOMINAL"),
-                is_critical_flag=bool(r.get("is_critical_flag", False)),
+                is_critical_flag=parse_boolean(r.get("is_critical_flag", False)),
             )
             dossier = supervisor.process_task(payload)
             row_dict = dict(r)

@@ -5,6 +5,7 @@ Threshold-based monitoring engines for clinical decision support.
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
 import datetime
+import math
 
 
 @dataclass
@@ -27,6 +28,9 @@ class ThresholdEngine:
     """
 
     def __init__(self, feature_name: str, threshold: float = 1.0, config: Optional[Dict[str, Any]] = None):
+        threshold = float(threshold)
+        if not math.isfinite(threshold) or threshold <= 0:
+            raise ValueError("Demonstration threshold must be finite and > 0")
         self.feature_name = feature_name
         self.threshold = threshold
         self.config = config or {}
@@ -43,10 +47,14 @@ class ThresholdEngine:
         Returns:
             EnrichmentResult with status, alerts, and recommendations
         """
+        primary_value = float(primary_value)
+        secondary_value = float(secondary_value)
+        if not math.isfinite(primary_value) or not math.isfinite(secondary_value):
+            raise ValueError("Metrics must be finite numeric values")
         alerts = []
         recs = []
         status = "OPTIMAL"
-        score = round(float(primary_value), 3)
+        score = round(primary_value, 3)
 
         if primary_value > self.threshold * 2:
             status = "CRITICAL_ALERT"
@@ -54,16 +62,16 @@ class ThresholdEngine:
                 f"{self.feature_name}: Primary value {primary_value:.2f} "
                 f"breached critical threshold ({self.threshold * 2:.2f})"
             )
-            recs.append("Initiate immediate protocol review and escalate to attending lead.")
+            recs.append("Review demonstration threshold configuration; no clinical action is inferred.")
         elif primary_value > self.threshold:
             status = "WARNING"
             alerts.append(
                 f"{self.feature_name}: Value {primary_value:.2f} "
                 f"exceeds baseline threshold ({self.threshold:.2f})"
             )
-            recs.append("Increase monitoring frequency and perform secondary verification.")
+            recs.append("Review demonstration values; no clinical action is inferred.")
         else:
-            recs.append("Parameters nominal under standard operating bounds.")
+            recs.append("Value is within the configured illustrative bounds (not a clinical range).")
 
         res = EnrichmentResult(
             feature_name=self.feature_name,

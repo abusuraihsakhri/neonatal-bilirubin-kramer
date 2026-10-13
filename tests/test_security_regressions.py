@@ -43,3 +43,26 @@ def test_pydantic_rejects_nonfinite_metrics(value):
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
         SystemTaskPayload(task_id="T", target_identifier="K", primary_metric=value)
+
+
+def test_unknown_model_provider_never_claims_external_inference():
+    from agents.llm_factory import LLMFactory
+    with pytest.raises(ValueError, match="not implemented"):
+        LLMFactory.create("openai")
+
+
+def test_enrichment_rejects_nonfinite_and_invalid_thresholds():
+    from enrichment import ThresholdEngine
+    with pytest.raises(ValueError):
+        ThresholdEngine("demo", threshold=0)
+    with pytest.raises(ValueError):
+        ThresholdEngine("demo", threshold=float("nan"))
+    engine = ThresholdEngine("demo", threshold=1)
+    with pytest.raises(ValueError):
+        engine.evaluate(float("inf"))
+
+
+def test_simulator_rejects_zero_tasks():
+    from simulator import run_simulation
+    with pytest.raises(ValueError):
+        run_simulation(0)

@@ -121,8 +121,8 @@ def process_csv(inp, out):
     with open(inp, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         headers = reader.fieldnames
-        if not headers or "zone" not in [h.strip().lower() for h in headers]:
-            raise ValueError("CSV header must include 'zone'")
+        if not headers or "zone" not in headers:
+            raise ValueError("CSV header must include exact column name 'zone'")
         normalized_headers = [h.strip().lower() for h in headers]
         if len(set(normalized_headers)) != len(headers):
             raise ValueError("CSV contains duplicate column names")

@@ -2,9 +2,13 @@ name: Test Python and browser application
 
 on:
   push:
-    branches: [master, main, "audit/**"]
+    branches: [master, main]
   pull_request:
     branches: [master, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

@@ -1,18 +1,16 @@
 __pycache__/
-*.pyc
+*.py[cod]
 .venv/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
 results.csv
 output.csv
-
-# Environment files with secrets
 .env
-.env.local
-.env.*.local
-
-# IDE
+.env.*
+!.env.example
 .vscode/
 .idea/
-
-# OS
 .DS_Store
 Thumbs.db
